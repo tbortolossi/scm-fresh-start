@@ -4,6 +4,7 @@
     python scm_preclean.py                     # plan only: list what would change
     python scm_preclean.py --apply             # clean "All Firewalls"
     python scm_preclean.py --apply --global    # also clean "Global"
+    python scm_preclean.py --apply --global --deep   # also edit predefined snippets that pin Global
 
 Credentials come from the environment or a .env file: SCM_TSG_ID, SCM_CLIENT_ID,
 SCM_CLIENT_SECRET (a service account of the tenant). --env-prefix SCM_TEST reads
@@ -23,7 +24,11 @@ What it does, in the chosen folders only, each step before what it references:
 3. an interface that still cannot be deleted has its default port cleared;
 4. detach every predefined/readonly snippet, one at a time.
 
-What SCM refuses to remove is reported as "kept", with the reason (see KEPT).
+Without --deep, what SCM refuses to remove is reported as "kept", with the reason
+(see KEPT). The blockers are predefined snippets attached nowhere (VM templates,
+best-practice bundles) that reference objects of Global's snippets and tags.
+--deep edits those referrers first, minimally (see plan_unref), so that Global
+can be emptied too.
 Every item touched is saved to a JSON backup before the first change. Changes
 stay in the candidate configuration: nothing is pushed.
 """
@@ -36,7 +41,7 @@ from pathlib import Path
 
 import requests
 
-__version__ = '0.1.0'
+__version__ = '0.2.0'
 
 API = 'https://api.strata.paloaltonetworks.com'
 AUTH = 'https://auth.apps.paloaltonetworks.com/oauth2/access_token'
@@ -162,8 +167,9 @@ def is_own(ep, folder, item):
             and not ('rules' in ep and set(item) <= MARKER))
 
 
-def plan(c, folders):
+def plan(c, folders, deep=False):
     """(action, folder, endpoint, item) still to do, and (description, reason) kept."""
+    kept_rules = {} if deep else KEPT
     snippets = {s['name']: s.get('type') for s in c.list('/config/setup/v1/snippets')}
     fobj = {f['name']: f for f in c.list('/config/setup/v1/folders')}
     todo, kept = [], []
@@ -176,7 +182,7 @@ def plan(c, folders):
         for ep, x in found:
             if not is_own(ep, folder, x):
                 continue
-            why = KEPT.get((folder, kind(ep), x.get('name')))
+            why = kept_rules.get((folder, kind(ep), x.get('name')))
             if why:
                 kept.append((f'[{FOLDERS[folder]}] {kind(ep)} `{x["name"]}`', why))
             else:
@@ -184,16 +190,133 @@ def plan(c, folders):
         for s in fobj.get(folder, {}).get('snippets') or []:
             if snippets.get(s) not in ('predefined', 'readonly'):
                 continue
-            why = KEPT.get((folder, 'snippet', s))
+            why = kept_rules.get((folder, 'snippet', s))
             if why:
                 kept.append((f'[{FOLDERS[folder]}] snippet `{s}` attached', why))
             else:
                 todo.append(('detach', folder, None, {'name': s, 'folder': fobj[folder]}))
+    if deep:
+        detached = [t[3]['name'] for t in todo if t[0] == 'detach']
+        tags = {t[3]['name'] for t in todo if t[0] == 'delete' and kind(t[2]) == 'tags'}
+        todo = plan_unref(c, snippets, folders, detached, tags) + todo
     return todo, kept
+
+
+# ------------------------------------------------------------------ --deep
+# Object kinds of a detached snippet that other snippets were seen to reference.
+REFERENCED = ['objects/v1/application-filters', 'objects/v1/tags',
+              'security/v1/anti-spyware-profiles', 'security/v1/vulnerability-protection-profiles',
+              'security/v1/wildfire-anti-virus-profiles', 'security/v1/dns-security-profiles']
+PG_KEYS = ('spyware', 'vulnerability', 'dns_security', 'virus_and_wildfire_analysis')
+
+
+def unref_rule(rule, names):
+    """A security rule's body without references to `names`, or None if it has none.
+
+    An emptied application list becomes `any`: the rule keeps matching something
+    rather than turning invalid."""
+    body = {k: v for k, v in rule.items() if k not in ('id', 'folder', 'snippet')}
+    changed = False
+    if set(body.get('application') or []) & names:
+        body['application'] = [a for a in body['application'] if a not in names] or ['any']
+        changed = True
+    if set(body.get('tag') or []) & names:
+        body['tag'] = [t for t in body['tag'] if t not in names]
+        changed = True
+        if not body['tag']:
+            del body['tag']
+    for key in ('block_web_application', 'allow_web_application'):
+        vals = body.get(key) or []
+        keep = [v for v in vals if (v.get('name') if isinstance(v, dict) else v) not in names]
+        if len(keep) != len(vals):
+            changed = True
+            if keep:
+                body[key] = keep
+            else:
+                del body[key]
+    return body if changed else None
+
+
+def unref_group(pg, names):
+    """A profile group's body with profiles from `names` swapped for the predefined best-practice."""
+    body = {k: v for k, v in pg.items() if k not in ('id', 'folder', 'snippet')}
+    changed = False
+    for key in PG_KEYS:
+        if set(body.get(key) or []) & names:
+            body[key] = ['best-practice']
+            changed = True
+    return body if changed else None
+
+
+def unref_zone(zone, profiles):
+    if (zone.get('network') or {}).get('zone_protection_profile') not in profiles:
+        return None
+    body = {k: v for k, v in zone.items() if k not in ('id', 'folder', 'snippet')}
+    body['network'] = {k: v for k, v in zone['network'].items() if k != 'zone_protection_profile'}
+    return body
+
+
+def untag_filter(af, tags):
+    tg = (af.get('tagging') or {}).get('tag') or []
+    if not set(tg) & tags:
+        return None
+    body = {k: v for k, v in af.items() if k not in ('id', 'folder', 'snippet', 'tagging')}
+    rest = [t for t in tg if t not in tags]
+    if rest:
+        body['tagging'] = {'tag': rest}
+    return body
+
+
+def plan_unref(c, snippet_types, folders, detached, tags):
+    """Minimal edits that release what the Global clean needs released.
+
+    Tested on a fresh tenant: the predefined VM templates' zones use Global-Default's
+    `best-practice` zone protection (so does All Firewalls' `internet` zone); their
+    rules use Internet-Security-Default's application filters; DNS-Best-Practice-pg
+    uses its profiles; Internet-Access-Best-Practice's rules its filters and tag;
+    Gen-AI-Best-Practice's filters the Sanctioned/Tolerated tags."""
+    names, zpp = set(), set()
+    for sn in detached:
+        for ep in REFERENCED:
+            names |= {x['name'] for x in c.list('/config/' + ep, snippet=sn) if x.get('snippet') == sn}
+        zpp |= {x['name'] for x in c.list('/config/network/v1/zone-protection-profiles', snippet=sn)
+                if x.get('snippet') == sn}
+    names |= tags
+    scopes = [('snippet', n) for n, t in snippet_types.items()
+              if (t in ('predefined', 'readonly') or n == 'predefined-snippet') and n not in detached]
+    scopes += [('folder', f) for f in folders]
+    out, seen = [], set()
+
+    def add(scope, ep, item, body, note):
+        if body is not None and item['id'] not in seen:
+            seen.add(item['id'])
+            out.append(('modify', scope[1], ep, {'item': item, 'body': body, 'note': note}))
+
+    for scope in scopes:
+        home = scope[1]
+
+        def own(x, home=home):
+            return (x.get('snippet') or x.get('folder')) == home
+        q = {scope[0]: home}
+        if zpp:
+            for z in filter(own, c.list('/config/network/v1/zones', **q)):
+                add(scope, 'network/v1/zones', z, unref_zone(z, zpp), 'drop zone protection ' + ', '.join(zpp))
+        if names:
+            for r in filter(own, c.list('/config/security/v1/security-rules', position='pre', **q)):
+                add(scope, 'security/v1/security-rules', r, unref_rule(r, names), 'drop references')
+            for pg in filter(own, c.list('/config/security/v1/profile-groups', **q)):
+                add(scope, 'security/v1/profile-groups', pg, unref_group(pg, names), 'use best-practice')
+        if tags:
+            for af in filter(own, c.list('/config/objects/v1/application-filters', **q)):
+                add(scope, 'objects/v1/application-filters', af, untag_filter(af, tags),
+                    'drop tag ' + ', '.join(sorted(tags)))
+    return out
 
 
 def describe(t):
     action, folder, ep, x = t
+    if action == 'modify':
+        return f'[{folder}] edit {kind(ep)} `{x["item"].get("name")}`: {x["note"]}'
     return (f'[{FOLDERS[folder]}] detach snippet `{x["name"]}`' if action == 'detach'
             else f'[{FOLDERS[folder]}] delete {kind(ep)} `{x.get("name")}`')
 
@@ -236,12 +359,32 @@ def fallback(c, ep, x):
     return None
 
 
+def modify(c, ep, x):
+    item, body = x['item'], x['body']
+    params = {'position': 'pre'} if 'rules' in ep else {}
+    try:
+        c.call('PUT', f'/config/{ep}/{item["id"]}', params=params, json=body)
+    except RuntimeError as e:
+        # An application filter an Internet rule allows cannot lose its tag
+        # ("… is not a valid reference"): remove that rule, then retry.
+        if kind(ep) != 'application-filters' or 'not a valid reference' not in str(e):
+            raise
+        sn = item.get('snippet')
+        for r in c.list('/config/security/v1/security-rules', snippet=sn, position='pre'):
+            if r.get('snippet') == sn and item['name'] in json.dumps(r):
+                c.call('DELETE', f'/config/security/v1/security-rules/{r["id"]}')
+                print(f'  ok    [{sn}] delete security-rules `{r["name"]}` (it pinned {item["name"]})')
+        c.call('PUT', f'/config/{ep}/{item["id"]}', json=body)
+
+
 def apply(c, todo):
     done, failed, neutral = [], [], set()
     for t in todo:
         action, folder, ep, x = t
         try:
-            if action == 'delete':
+            if action == 'modify':
+                modify(c, ep, x)
+            elif action == 'delete':
                 c.call('DELETE', f'/config/{ep}/{x["id"]}')
             else:
                 f = c.call('GET', f'/config/setup/v1/folders/{x["folder"]["id"]}')
@@ -256,7 +399,15 @@ def apply(c, todo):
     still = []
     for t, err in failed:
         action, folder, ep, x = t
-        if action == 'delete':
+        if action == 'modify':
+            try:
+                modify(c, ep, x)
+                done.append(describe(t))
+                print(f'  ok    {describe(t)} (second try)')
+                continue
+            except RuntimeError as e:
+                err = str(e)
+        elif action == 'delete':
             try:
                 c.call('DELETE', f'/config/{ep}/{x["id"]}')
                 done.append(describe(t))
@@ -281,6 +432,8 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
     ap.add_argument('--apply', action='store_true', help='make the changes (default: plan only)')
     ap.add_argument('--global', dest='glob', action='store_true', help='also clean Global')
+    ap.add_argument('--deep', action='store_true',
+                    help='edit the predefined snippets that pin Global (implies --global)')
     ap.add_argument('--env-file', default='.env', help='KEY=value file read under the environment')
     ap.add_argument('--env-prefix', default='SCM',
                     help='read <PREFIX>_TSG_ID / _CLIENT_ID / _CLIENT_SECRET (default SCM)')
@@ -289,10 +442,11 @@ def main(argv=None):
     a = ap.parse_args(argv)
 
     tsg, cid, secret = credentials(load_env(a.env_file), a.env_prefix)
+    a.glob = a.glob or a.deep
     folders = ['ngfw-shared'] + (['All'] if a.glob else [])
     print(f'tenant TSG ...{tsg[-4:]}')
     c = Scm(tsg, cid, secret)
-    todo, kept = plan(c, folders)
+    todo, kept = plan(c, folders, a.deep)
     print(f'{len(todo)} change(s) in {", ".join(FOLDERS[f] for f in folders)}:')
     for t in todo:
         print(f'  - {describe(t)}')
@@ -304,11 +458,11 @@ def main(argv=None):
 
     backup = Path(a.backup_dir) / f'scm-preclean-{tsg[-4:]}-{dt.datetime.now(dt.timezone.utc):%Y%m%dT%H%M%SZ}.json'
     backup.parent.mkdir(parents=True, exist_ok=True)
-    backup.write_text(json.dumps([{'action': k, 'folder': f, 'endpoint': ep, 'item': x}
+    backup.write_text(json.dumps([{'action': k, 'scope': f, 'endpoint': ep, 'item': x}
                                   for k, f, ep, x in todo], indent=1, default=str))
     print(f'backup -> {backup}')
     done, neutral, still = apply(c, todo)
-    left, _ = plan(c, folders)
+    left, _ = plan(c, folders, a.deep)
     left = [t for t in left if (t[1], kind(t[2] or ''), t[3].get('name')) not in neutral]
     print(f'{len(done)} removed, {len(neutral)} neutralised, {len(still)} failed; '
           + ('clean' if not left else f'{len(left)} left: ' + '; '.join(describe(t) for t in left)))

@@ -83,3 +83,26 @@ def test_emptied_zone_is_none_when_nothing_to_remove():
 def test_credentials_prefix(monkeypatch):
     env = {'SCM_TEST_TSG_ID': '1', 'SCM_TEST_CLIENT_ID': 'c', 'SCM_TEST_CLIENT_SECRET': 's'}
     assert P.credentials(env, 'SCM_TEST') == ['1', 'c', 's']
+
+
+def test_unref_rule_keeps_the_rule_valid():
+    names = {'All Web Applications', 'Web Security Global', 'High Risk Applications', 'New Web Applications'}
+    vm = {'id': 'r', 'name': 'default-trust-to-trust-zone-policy', 'snippet': 'Azure-VM-Default',
+          'application': ['All Web Applications'], 'action': 'allow'}
+    assert P.unref_rule(vm, names)['application'] == ['any']
+    web = {'id': 'w', 'name': 'Global Web Access-Allow', 'policy_type': 'Internet', 'tag': ['Web Security Global'],
+           'allow_web_application': [{'name': 'New Web Applications'}], 'allow_url_category': [{'name': 'news'}]}
+    body = P.unref_rule(web, names)
+    assert 'tag' not in body and 'allow_web_application' not in body and body['allow_url_category']
+    assert P.unref_rule({'id': 'x', 'name': 'x', 'application': ['ssl']}, names) is None
+
+
+def test_unref_group_zone_and_filter():
+    pg = {'id': 'g', 'name': 'DNS-Best-Practice-pg', 'spyware': ['web-security-default'], 'url_filtering': ['x']}
+    assert P.unref_group(pg, {'web-security-default'}) == {
+        'name': 'DNS-Best-Practice-pg', 'spyware': ['best-practice'], 'url_filtering': ['x']}
+    z = {'id': 'z', 'name': 'trust-zone', 'network': {'layer3': ['$t'], 'zone_protection_profile': 'best-practice'}}
+    assert P.unref_zone(z, {'best-practice'})['network'] == {'layer3': ['$t']}
+    af = {'id': 'a', 'name': 'Tolerated Gen AI Apps', 'tagging': {'tag': ['[Web App]', 'Tolerated']}}
+    assert P.untag_filter(af, {'Tolerated'})['tagging'] == {'tag': ['[Web App]']}
+    assert 'tagging' not in P.untag_filter({'id': 'b', 'name': 'b', 'tagging': {'tag': ['Tolerated']}}, {'Tolerated'})

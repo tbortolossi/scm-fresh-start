@@ -41,11 +41,11 @@ step it references:
 Before the first change, every item touched is saved to a JSON backup. Changes stay in the candidate
 configuration: nothing is pushed.
 
-## What SCM will not let go
+## What pins Global, and `--deep`
 
 These results come from a fresh tenant, and the SCM web UI refuses the same operations with the same
-references, so this is SCM's own limit, not an API or role limit. The script reports them as `kept`, not
-as failures:
+references, so this is SCM's own limit, not an API or role limit. Without `--deep`, the script reports them as
+`kept`, not as failures:
 
 | Item | Why |
 |---|---|
@@ -54,6 +54,22 @@ as failures:
 | snippets `default` / *Global-Default* and `Web-Security-Default` / *Internet-Security-Default* on Global | Predefined snippets attached nowhere reference their content, and predefined snippets cannot be deleted. *Global-Default*: its `best-practice` zone protection profile is used by the zones of the AWS/Azure/GCP/AIRS VM templates. *Internet-Security-Default*: its `web-security-default` profiles are used by `DNS-Best-Practice-pg`, its application filters by the VM templates' rules and by `Global Web Access-Allow/Block` (`Internet-Access-Best-Practice`), and its `Web Security Global` tag by those same two rules |
 | the tenant's certificates (Root CA, Forward-Trust/UnTrust CAs, cookie CAs, SAML) | "Deleting default certificates is not allowed". The script does not attempt it |
 | device settings (DNS, NTP, service routes, admin roles…) | Not exposed to a standard service account |
+
+The blockers on Global are **predefined snippets attached nowhere**. They cannot be deleted, but their
+objects can be edited. `--deep` (which implies `--global`) makes the smallest edits that release Global,
+before any delete or detach:
+
+| Blocker | Edit |
+|---|---|
+| zones of the VM templates, and All Firewalls' `internet` zone, use Global-Default's `best-practice` zone protection | the zone protection profile is removed from those zones. The `internet` zone's reference is the one SCM hides behind a bare `500 config connection returned error` |
+| VM template rules use `All Web Applications` | the application becomes `any` |
+| `DNS-Best-Practice-pg` uses the `web-security-default` profiles | it uses the predefined `best-practice` profiles |
+| `Global Web Access-Allow` / `-Block` (Internet-Access-Best-Practice) use the `Web Security Global` tag and web application filters | those fields are removed |
+| Gen-AI-Best-Practice filters are tagged `Sanctioned` / `Tolerated` | the tag is removed. When the Internet rule `Sanctioned Gen AI Access` pins the filter ("… is not a valid reference"), that rule is deleted first |
+
+This changes Palo Alto's predefined templates in your tenant: the VM and best-practice snippets no longer
+match what they ship with. Use `--deep` only on a tenant you want bare. The JSON backup records every
+original object.
 
 ## Use
 
@@ -66,6 +82,7 @@ cp .env.example .env        # fill in a service account of the tenant
 python scm_preclean.py                    # plan: what would change
 python scm_preclean.py --apply            # clean All Firewalls
 python scm_preclean.py --apply --global   # also clean Global
+python scm_preclean.py --apply --deep     # Global too, editing the predefined snippets that pin it
 ```
 
 Plan output on a fresh tenant:
