@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Clean a Strata Cloud Manager tenant of its default NGFW configuration after a Panorama import.
 
-    python scm_preclean.py                     # plan only: list what would change
-    python scm_preclean.py --apply             # clean "All Firewalls"
-    python scm_preclean.py --apply --global    # also clean "Global"
-    python scm_preclean.py --apply --global --deep   # also edit predefined snippets that pin Global
+    python scm_fresh_start.py                     # plan only: list what would change
+    python scm_fresh_start.py --apply             # clean "All Firewalls"
+    python scm_fresh_start.py --apply --global    # also clean "Global"
+    python scm_fresh_start.py --apply --global --deep   # also edit predefined snippets that pin Global
 
 Credentials come from the environment or a .env file: SCM_TSG_ID, SCM_CLIENT_ID,
 SCM_CLIENT_SECRET (a service account of the tenant). --env-prefix SCM_TEST reads
@@ -563,7 +563,7 @@ def main(argv=None):
         print('plan only: rerun with --apply' if todo else 'nothing left to remove')
         return 0
 
-    backup = Path(a.backup_dir) / f'scm-preclean-{tsg[-4:]}-{dt.datetime.now(dt.timezone.utc):%Y%m%dT%H%M%SZ}.json'
+    backup = Path(a.backup_dir) / f'scm-fresh-start-{tsg[-4:]}-{dt.datetime.now(dt.timezone.utc):%Y%m%dT%H%M%SZ}.json'
     backup.parent.mkdir(parents=True, exist_ok=True)
     backup.write_text(json.dumps([{'action': k, 'scope': f, 'endpoint': ep, 'item': x}
                                   for k, f, ep, x in todo], indent=1, default=str))

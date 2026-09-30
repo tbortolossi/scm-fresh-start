@@ -1,6 +1,6 @@
-# scm-preclean
+# scm-fresh-start
 
-[![CI](https://github.com/tbortolossi/scm-preclean/actions/workflows/ci.yml/badge.svg)](https://github.com/tbortolossi/scm-preclean/actions/workflows/ci.yml)
+[![CI](https://github.com/tbortolossi/scm-fresh-start/actions/workflows/ci.yml/badge.svg)](https://github.com/tbortolossi/scm-fresh-start/actions/workflows/ci.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-green)](LICENSE)
 
 **Get a Strata Cloud Manager tenant with no configuration of its own, the way a Panorama is right after
@@ -49,7 +49,7 @@ Cleaning the tenant before the import does not help. The import reloads the tena
 configuration before it adds yours: everything removed beforehand comes back. So the order is:
 
 1. import from Panorama;
-2. run `scm-preclean` to remove the defaults and give the migrated interfaces their ports back;
+2. run `scm-fresh-start` to remove the defaults and give the migrated interfaces their ports back;
 3. check, then push.
 
 ## What it removes
@@ -80,7 +80,7 @@ lost its port gets `ethernetX/Y` back. Subinterfaces follow their parent.
   the reason. See [What pins Global](#what-pins-global-and---deep).
 
 Before the first change, the script saves every item it touches to a JSON file
-(`scm-preclean-<last 4 digits of the TSG ID>-<date>.json`), so you know exactly what was there.
+(`scm-fresh-start-<last 4 digits of the TSG ID>-<date>.json`), so you know exactly what was there.
 
 ## Step by step
 
@@ -117,13 +117,13 @@ Secret instead of a login and password. It must belong to the tenant you want to
 
 1. In SCM, switch to the tenant to clean (top of the screen), then open **Identity & Access**
    (under *Settings* or *Common Services*, depending on your SCM version).
-2. **Add Identity**, identity type **Service Account**, name it for example `scm-preclean`.
+2. **Add Identity**, identity type **Service Account**, name it for example `scm-fresh-start`.
 3. Copy the **Client ID** and the **Client Secret** somewhere safe. **The secret is shown only once**; if
    you lose it, create a new service account.
 4. Give the service account a role that can change the configuration of *All Firewalls* and *Global*:
    **Superuser** on this tenant. Assign it on the tenant you clean, not on a parent tenant.
 5. Find the **TSG ID**, the tenant's number. It is inside the Client ID:
-   `scm-preclean@`**`1234567890`**`.iam.panserviceaccount.com` → TSG ID `1234567890`.
+   `scm-fresh-start@`**`1234567890`**`.iam.panserviceaccount.com` → TSG ID `1234567890`.
 
 Now give them to the script. In the repository folder, copy the example file:
 
@@ -135,7 +135,7 @@ Open `.env` in any text editor and fill in the three lines, without quotes or sp
 
 ```
 SCM_TSG_ID=1234567890
-SCM_CLIENT_ID=scm-preclean@1234567890.iam.panserviceaccount.com
+SCM_CLIENT_ID=scm-fresh-start@1234567890.iam.panserviceaccount.com
 SCM_CLIENT_SECRET=paste-the-secret-here
 ```
 
@@ -147,7 +147,7 @@ by `.gitignore`. When the migration is done, delete the service account in SCM.
 Always start with a plan. It changes nothing and lists what it would do:
 
 ```bash
-python scm_preclean.py
+python scm_fresh_start.py
 ```
 
 ```
@@ -172,8 +172,8 @@ let go, with the reason. If a line touches something you want to keep, stop ther
 Then apply:
 
 ```bash
-python scm_preclean.py --apply            # All Firewalls only
-python scm_preclean.py --apply --global   # All Firewalls and Global
+python scm_fresh_start.py --apply            # All Firewalls only
+python scm_fresh_start.py --apply --global   # All Firewalls and Global
 ```
 
 The script prints where the JSON backup is, each change, and a summary: how many items were removed,
@@ -197,7 +197,7 @@ had both interfaces back, with their addresses, zones, virtual routers and IKE g
 
 1. Take a snapshot of the tenant in SCM, so you can return to it.
 2. Run the Panorama import. In the load results, note the `already in use … Discarding` lines.
-3. Run `scm_preclean.py`, read the plan, then run it with `--apply` (and `--global`, or `--deep` for a bare
+3. Run `scm_fresh_start.py`, read the plan, then run it with `--apply` (and `--global`, or `--deep` for a bare
    Global).
 4. Refresh the SCM page in your browser.
 5. Check each firewall's interface list against Panorama.

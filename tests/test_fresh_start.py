@@ -3,7 +3,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-import scm_preclean as P
+import scm_fresh_start as P
 
 
 class FakeScm:
