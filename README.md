@@ -43,13 +43,15 @@ configuration: nothing is pushed.
 
 ## What SCM will not let go
 
-These results come from a fresh tenant. The script reports them as `kept`, not as failures:
+These results come from a fresh tenant, and the SCM web UI refuses the same operations with the same
+references, so this is SCM's own limit, not an API or role limit. The script reports them as `kept`, not
+as failures:
 
 | Item | Why |
 |---|---|
-| zone `internet` (All Firewalls) | The Web Security *outbound zone* setting references it. The script empties the zone of interfaces. Clear that setting in the UI and the next run deletes the zone |
+| zone `internet` (All Firewalls) | The NGFW web proxy setting `swg -> general-settings -> outbound-zone` references it. The script empties the zone of interfaces. Clear that setting in the UI and the next run deletes the zone |
 | tags `Sanctioned`, `Tolerated` (Global) | The predefined snippet `Gen-AI-Best-Practice` references them |
-| snippets `default` / *Global-Default* and `Web-Security-Default` / *Internet-Security-Default* on Global | Predefined snippets attached nowhere (the VM templates, `DNS-Best-Practice`, `Internet-Access-Best-Practice`) reference their content, and predefined snippets cannot be deleted |
+| snippets `default` / *Global-Default* and `Web-Security-Default` / *Internet-Security-Default* on Global | Predefined snippets attached nowhere reference their content, and predefined snippets cannot be deleted. *Global-Default*: its `best-practice` zone protection profile is used by the zones of the AWS/Azure/GCP/AIRS VM templates. *Internet-Security-Default*: its `web-security-default` profiles are used by `DNS-Best-Practice-pg`, its application filters by the VM templates' rules and by `Global Web Access-Allow/Block` (`Internet-Access-Best-Practice`), and its `Web Security Global` tag by those same two rules |
 | the tenant's certificates (Root CA, Forward-Trust/UnTrust CAs, cookie CAs, SAML) | "Deleting default certificates is not allowed". The script does not attempt it |
 | device settings (DNS, NTP, service routes, admin roles…) | Not exposed to a standard service account |
 
