@@ -3,8 +3,9 @@
 [![CI](https://github.com/tbortolossi/scm-preclean/actions/workflows/ci.yml/badge.svg)](https://github.com/tbortolossi/scm-preclean/actions/workflows/ci.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-green)](LICENSE)
 
-**Strip a Strata Cloud Manager tenant of its default NGFW configuration before you import a Panorama
-into it, so the import lands in a tenant as bare as a freshly booted Panorama.**
+**Clean a Strata Cloud Manager tenant of its default NGFW configuration and repair what that
+configuration breaks in a Panorama import: interfaces that silently disappear from the imported
+firewalls.** Run it after the import, before the first push.
 
 > Personal project, not a Palo Alto Networks product and not supported by Palo Alto Networks. It uses the
 > public [SCM configuration API](https://pan.dev/scm/docs/home/). Try it on a test tenant first.
@@ -27,16 +28,27 @@ snippet -> <template> -> object-variable -> interface -> ethernet -> $ethernet1-
 The imported firewalls then lack those interfaces. Nothing flags this beyond that line in the load
 results, and a push would delete the interfaces on the devices.
 
+**Cleaning the tenant before the import does not help.** The import reloads the tenant's full default
+configuration before it adds yours (`Config loaded from fawkes-cfg.xml`): everything removed beforehand
+comes back, and both sides of each collision lose their port. The tenant's `$eth-internet` / `$eth-local`
+and the migrated `$ethernet1-3` / `$ethernet1-4` all end up without one. So the fix runs **after** the
+import: remove the defaults, then give the migrated interfaces their ports back.
+
 ## What it does
 
 Only in *All Firewalls* (`ngfw-shared`), and in *Global* (`All`) with `--global`. Each step runs before the
 step it references:
 
-1. Delete every item the folder owns itself (not through a snippet): rules, logical and virtual routers,
+1. With `--ui-api`, set the Internet Security Inbound and Outbound Zones of All Firewalls to `any`, which
+   releases the zone `internet`.
+2. Delete every item the folder owns itself (not through a snippet): rules, logical and virtual routers,
    zones, interfaces, profiles, objects and variables.
-2. If a zone is still referenced, keep it and remove its interfaces.
-3. If an interface still cannot be deleted, clear its default port. This frees `ethernet1/x` for the import.
-4. Detach every predefined or readonly snippet, one at a time. Snippets you created are never touched.
+3. If a zone is still referenced, keep it and remove its interfaces.
+4. If an interface still cannot be deleted, clear its default port.
+5. Detach every predefined or readonly snippet, one at a time. Snippets you created, including the imported
+   ones, are never detached.
+6. **Restore the ports**: in your own snippets (the imported templates), every interface variable named
+   `$ethernetX-Y` that has no default port gets `ethernetX/Y` back. Subinterfaces follow their parent.
 
 Before the first change, every item touched is saved to a JSON backup. Changes stay in the candidate
 configuration: nothing is pushed.
@@ -87,17 +99,20 @@ python scm_preclean.py --apply --global   # also clean Global
 python scm_preclean.py --apply --deep     # Global too, editing the predefined snippets that pin it
 ```
 
-Plan output on a fresh tenant:
+Plan output right after an import:
 
 ```
 tenant TSG ...1234
-6 change(s) in All Firewalls:
+10 change(s) in All Firewalls:
+  - [All Firewalls] Internet Security zones: inbound any -> any, outbound internet -> any
   - [All Firewalls] delete logical-routers `default`
   - [All Firewalls] delete virtual-routers `default`
   - [All Firewalls] delete zones `local`
   - [All Firewalls] delete zones `internet`
   ...
   - [All Firewalls] detach snippet `Auto-VPN-Default-Snippet`
+  - [TPL-SITE] set $ethernet1-3 default port -> ethernet1/3
+  - [TPL-HA] set $ethernet1-4 default port -> ethernet1/4
 plan only: rerun with --apply
 ```
 
@@ -117,13 +132,14 @@ The service account needs a role that can read and write the configuration of *A
 
 ## Suggested order for a Panorama migration
 
-1. Take a snapshot of the fresh tenant in SCM, so you can return to it.
-2. In the UI, set **Internet Security → General → General Settings → Outbound Zone** to `any` (scope All
-   Firewalls). This is the only step the API cannot do.
-3. Run `scm_preclean.py`, read the plan, then run it with `--apply` (`--global`, or `--deep` for a bare Global).
-4. Run the Panorama import.
-5. In the load results, look for `already in use … Discarding` lines. After this clean there should be none
-   for `ethernet1/3` or `ethernet1/4`.
+1. Take a snapshot of the tenant in SCM, so you can return to it.
+2. Run the Panorama import. In the load results, note the `already in use … Discarding` lines.
+3. Without `--ui-api`: in the UI, set **Internet Security → General → General Settings → Outbound Zone** to
+   `any` (scope All Firewalls).
+4. Run `scm_preclean.py`, read the plan, then run it with `--apply` (`--global`, or `--deep` for a bare Global).
+5. Check each firewall's interface list in SCM against Panorama **before the first push**. This was verified
+   on a lab import: after step 4 the firewalls had `ethernet1/3` and `ethernet1/4` back, with their addresses,
+   zones, virtual routers and IKE gateway references.
 
 ## Tests
 
@@ -133,8 +149,8 @@ pytest -q
 ```
 
 The tests run offline against a fake tenant. They cover the planning rules (items a folder owns versus
-items from a snippet, rulebase markers, which snippets get detached) and how referenced zones and
-interfaces are handled.
+items from a snippet, rulebase markers, which snippets get detached, which interface variables get their port
+back), how referenced zones and interfaces are handled, and the `--deep` edits.
 
 ## License
 

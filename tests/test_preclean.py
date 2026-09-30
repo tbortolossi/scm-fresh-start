@@ -118,3 +118,29 @@ def test_swg_zone_step_planned_first_when_not_any():
     todo, _ = P.plan(fake, ['ngfw-shared'])
     assert todo[0][0] == 'swg'
     assert 'outbound internet -> any' in P.describe(todo[0])
+
+
+def test_port_of_interface_variable_names():
+    assert P.port_of('$ethernet1-3') == 'ethernet1/3'
+    assert P.port_of('$ethernet1-2.100') is None          # follows its parent
+    assert P.port_of('$eth-internet') is None and P.port_of('$tunnel-1') is None
+
+
+def test_ports_planned_only_for_own_snippets_without_default():
+    data = dict(TENANT)
+    data['/config/setup/v1/snippets'] = TENANT['/config/setup/v1/snippets'] + [{'name': 'TPL-SITE', 'type': None}]
+    data['/config/network/v1/ethernet-interfaces'] = TENANT['/config/network/v1/ethernet-interfaces'] + [
+        {'id': 'p3', 'name': '$ethernet1-3', 'snippet': 'TPL-SITE'},
+        {'id': 'p1', 'name': '$ethernet1-1', 'snippet': 'TPL-SITE'}]
+    data['/config/network/v1/ethernet-interfaces/p3'] = {'id': 'p3', 'name': '$ethernet1-3', 'snippet': 'TPL-SITE'}
+    data['/config/network/v1/ethernet-interfaces/p1'] = {'id': 'p1', 'name': '$ethernet1-1', 'snippet': 'TPL-SITE',
+                                                         'default_value': 'ethernet1/1'}
+
+    class Fake(FakeScm):
+        def list(self, path, **params):
+            sn = params.get('snippet')
+            items = self.data.get(path, [])
+            return [x for x in items if x.get('snippet') == sn] if sn else super().list(path, **params)
+
+    got = [P.describe(t) for t in P.plan_ports(Fake(data), {'TPL-SITE': None, 'my-snippet': None})]
+    assert got == ['[TPL-SITE] set $ethernet1-3 default port -> ethernet1/3']

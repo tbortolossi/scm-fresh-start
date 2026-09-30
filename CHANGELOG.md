@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.0
+
+- Run after the import, not before: the import reloads the tenant defaults. The README says so.
+- Restore the ports: `$ethernetX-Y` interface variables of your own snippets left without a default port
+  get `ethernetX/Y` back (verified on a lab import).
+- `--ui-api`: set All Firewalls' Internet Security zones to `any` through the SCM UI backend.
+
 ## 0.2.0
 
 - `--deep`: edit the predefined snippets that pin Global (zone protection, application filters, DNS

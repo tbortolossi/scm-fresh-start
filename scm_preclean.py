@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Strip a Strata Cloud Manager tenant of its default NGFW configuration before a Panorama import.
+"""Clean a Strata Cloud Manager tenant of its default NGFW configuration after a Panorama import.
 
     python scm_preclean.py                     # plan only: list what would change
     python scm_preclean.py --apply             # clean "All Firewalls"
@@ -10,7 +10,10 @@ Credentials come from the environment or a .env file: SCM_TSG_ID, SCM_CLIENT_ID,
 SCM_CLIENT_SECRET (a service account of the tenant). --env-prefix SCM_TEST reads
 SCM_TEST_TSG_ID and so on, to point the same .env at a second tenant.
 
-Why: a fresh tenant is not empty the way a freshly booted Panorama is. "All
+Run it after the import, before the first push: the import reloads the tenant's
+defaults, so a clean made before it is undone.
+
+Why: a tenant is not empty the way a freshly booted Panorama is. "All
 Firewalls" (`ngfw-shared`) owns the interfaces `$eth-internet` and `$eth-local`,
 whose default ports are ethernet1/3 and ethernet1/4. A Panorama import that
 migrates a template using those ports gets them refused ("… 'ethernet1/3' is
@@ -36,12 +39,13 @@ import argparse
 import datetime as dt
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
 import requests
 
-__version__ = '0.2.0'
+__version__ = '0.3.0'
 
 API = 'https://api.strata.paloaltonetworks.com'
 AUTH = 'https://auth.apps.paloaltonetworks.com/oauth2/access_token'
@@ -230,6 +234,8 @@ def plan(c, folders, deep=False):
         cur = c.ui('GET', SWG_ZONE, params={'folder': 'ngfw-shared', 'pagination': 'false'})
         if cur and (cur.get('inbound_zone'), cur.get('outbound_zone')) != ('any', 'any'):
             todo.insert(0, ('swg', 'ngfw-shared', None, {'name': 'swg-zone', 'before': cur}))
+    # Last: the ports only free up once the defaults holding them are gone.
+    todo += plan_ports(c, snippets)
     if deep:
         detached = [t[3]['name'] for t in todo if t[0] == 'detach']
         tags = {t[3]['name'] for t in todo if t[0] == 'delete' and kind(t[2]) == 'tags'}
@@ -359,10 +365,44 @@ def plan_unref(c, snippet_types, folders, detached, tags):
     return out
 
 
+# ------------------------------------------------------------------ ports
+# The import names a migrated interface after its port ($ethernet1-3 for
+# ethernet1/3) and gives it that port as default value -- unless the tenant's
+# own defaults hold the port, in which case the value is discarded and the
+# interface vanishes from the firewalls. Once the defaults are gone, restore it.
+# A subinterface has no port of its own: it follows its parent_interface.
+PORT_VAR = re.compile(r'^\$ethernet(\d+)-(\d+)$')
+PORT_EPS = ['network/v1/ethernet-interfaces']
+
+
+def port_of(name):
+    """`$ethernet1-3` -> `ethernet1/3`, else None."""
+    m = PORT_VAR.match(name or '')
+    return f'ethernet{m[1]}/{m[2]}' if m else None
+
+
+def plan_ports(c, snippet_types):
+    """Interface variables of your own snippets (the imported templates) left without a port."""
+    out = []
+    for sn, t in snippet_types.items():
+        if t is not None or sn == 'predefined-snippet':
+            continue
+        for ep in PORT_EPS:
+            for x in c.list('/config/' + ep, snippet=sn):
+                if x.get('snippet') != sn or not port_of(x.get('name')):
+                    continue
+                full = c.call('GET', f'/config/{ep}/{x["id"]}')   # list calls omit default_value
+                if not full.get('default_value'):
+                    out.append(('port', sn, ep, {'item': full, 'port': port_of(x['name'])}))
+    return out
+
+
 def describe(t):
     action, folder, ep, x = t
     if action == 'modify':
         return f'[{folder}] edit {kind(ep)} `{x["item"].get("name")}`: {x["note"]}'
+    if action == 'port':
+        return f'[{folder}] set {x["item"]["name"]} default port -> {x["port"]}'
     if action == 'swg':
         b = x['before']
         return (f'[All Firewalls] Internet Security zones: inbound {b.get("inbound_zone")} -> any, '
@@ -439,6 +479,9 @@ def apply(c, todo):
         try:
             if action == 'modify':
                 modify(c, ep, x)
+            elif action == 'port':
+                body = {k: v for k, v in x['item'].items() if k not in ('id', 'folder', 'snippet')}
+                c.call('PUT', f'/config/{ep}/{x["item"]["id"]}', json={**body, 'default_value': x['port']})
             elif action == 'swg':
                 c.ui('PUT', SWG_ZONE, params={'folder': 'ngfw-shared'},
                      json={'inbound_zone': 'any', 'outbound_zone': 'any'})
