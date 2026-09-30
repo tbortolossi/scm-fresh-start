@@ -1,4 +1,4 @@
-# scm-fresh-start
+# SCM Fresh Start
 
 [![CI](https://github.com/tbortolossi/scm-fresh-start/actions/workflows/ci.yml/badge.svg)](https://github.com/tbortolossi/scm-fresh-start/actions/workflows/ci.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-green)](LICENSE)
@@ -49,7 +49,7 @@ Cleaning the tenant before the import does not help. The import reloads the tena
 configuration before it adds yours: everything removed beforehand comes back. So the order is:
 
 1. import from Panorama;
-2. run `scm-fresh-start` to remove the defaults and give the migrated interfaces their ports back;
+2. run SCM Fresh Start to remove the defaults and give the migrated interfaces their ports back;
 3. check, then push.
 
 ## What it removes
