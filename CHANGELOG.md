@@ -7,6 +7,8 @@
   Tested step by step on a fresh tenant.
 - Zone `internet`: print the manual fix (Internet Security > General Settings > Outbound Zone = any).
   With it, All Firewalls and Global end up empty.
+- Errors carry SCM's detailed messages; the zone fallback re-reads the zone; no-op profile group
+  edits are skipped; `GlobalProtect-Default` is kept. First full `--deep --apply` run on a fresh tenant.
 
 ## 0.1.0
 

@@ -89,6 +89,10 @@ KEPT = {
                                    'best-practice zone protection',
     ('All', 'snippet', 'Web-Security-Default'): 'the predefined VM, DNS-Best-Practice and '
                                                 'Internet-Access-Best-Practice snippets reference it',
+    # Holds the `Local Users` authentication profile for GlobalProtect / Mobile Users;
+    # detaching it fails with a bare 500 even under --deep. Not NGFW config.
+    ('All', 'snippet', 'GlobalProtect-Default'): 'GlobalProtect / Mobile Users use its authentication '
+                                                 'profile (SCM answers a bare 500); not NGFW config',
 }
 
 
@@ -154,8 +158,14 @@ class Scm:
         r = requests.request(method, API + path, headers=self.h, timeout=120, **kw)
         if r.status_code >= 400:
             try:
-                msg = r.json()['_errors'][0]['message']
-            except (ValueError, KeyError, IndexError, TypeError):
+                e = r.json()['_errors'][0]
+                # The first message is often generic ("Your configuration is not
+                # valid"); the specifics sit in details.
+                det = e.get('details') or {}
+                extra = [x.get('message') or x.get('msg') for x in det.get('errors') or []]
+                extra += det.get('message') if isinstance(det.get('message'), list) else [det.get('message')]
+                msg = '. '.join([e['message'], *[x for x in extra if x]])
+            except (ValueError, KeyError, IndexError, TypeError, AttributeError):
                 msg = r.text[:300]
             raise RuntimeError(f'{r.status_code} {msg}')
         return r.json() if r.text.strip() else {}
@@ -174,7 +184,7 @@ def is_own(ep, folder, item):
 
 def plan(c, folders, deep=False):
     """(action, folder, endpoint, item) still to do, and (description, reason) kept."""
-    kept_rules = {} if deep else KEPT
+    kept_rules = {k: v for k, v in KEPT.items() if k[2] == 'GlobalProtect-Default'} if deep else KEPT
     snippets = {s['name']: s.get('type') for s in c.list('/config/setup/v1/snippets')}
     fobj = {f['name']: f for f in c.list('/config/setup/v1/folders')}
     todo, kept = [], []
@@ -247,7 +257,7 @@ def unref_group(pg, names):
     body = {k: v for k, v in pg.items() if k not in ('id', 'folder', 'snippet')}
     changed = False
     for key in PG_KEYS:
-        if set(body.get(key) or []) & names:
+        if set(body.get(key) or []) & names and body[key] != ['best-practice']:
             body[key] = ['best-practice']
             changed = True
     return body if changed else None
@@ -348,6 +358,8 @@ def without_port(iface):
 def fallback(c, ep, x):
     """Deletion refused: neutralise instead. Returns what was done, or None."""
     if kind(ep) == 'zones':
+        # Re-read: an earlier step of this run may have edited the zone.
+        x = c.call('GET', f'/config/{ep}/{x["id"]}')
         body = emptied_zone(x)
         if body is None:
             return 'kept (still referenced), already without interfaces'

@@ -53,6 +53,7 @@ references, so this is SCM's own limit, not an API or role limit. Without `--dee
 | tags `Sanctioned`, `Tolerated` (Global) | The predefined snippet `Gen-AI-Best-Practice` references them |
 | snippets `default` / *Global-Default* and `Web-Security-Default` / *Internet-Security-Default* on Global | Predefined snippets attached nowhere reference their content, and predefined snippets cannot be deleted. *Global-Default*: its `best-practice` zone protection profile is used by the zones of the AWS/Azure/GCP/AIRS VM templates. *Internet-Security-Default*: its `web-security-default` profiles are used by `DNS-Best-Practice-pg`, its application filters by the VM templates' rules and by `Global Web Access-Allow/Block` (`Internet-Access-Best-Practice`), and its `Web Security Global` tag by those same two rules |
 | the tenant's certificates (Root CA, Forward-Trust/UnTrust CAs, cookie CAs, SAML) | "Deleting default certificates is not allowed". The script does not attempt it |
+| snippet `GlobalProtect-Default` on Global, when attached | It holds the `Local Users` authentication profile of GlobalProtect / Mobile Users, and SCM refuses the detach with a bare 500, even with `--deep`. Kept: it is not NGFW configuration |
 | device settings (DNS, NTP, service routes, admin roles…) | Not exposed to a standard service account |
 
 The blockers on Global are **predefined snippets attached nowhere**. They cannot be deleted, but their

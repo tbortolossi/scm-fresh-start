@@ -38,6 +38,9 @@ TENANT = {
     ],
     '/config/network/v1/ethernet-interfaces': [
         {'id': 'e1', 'name': '$eth-internet', 'folder': 'ngfw-shared', 'layer3': {}, 'slot': 1}],
+    '/config/network/v1/zones/z1': {
+        'id': 'z1', 'name': 'internet', 'folder': 'ngfw-shared',
+        'network': {'layer3': ['$eth-internet'], 'zone_protection_profile': 'best-practice'}},
     '/config/network/v1/ethernet-interfaces/e1': {
         'id': 'e1', 'name': '$eth-internet', 'folder': 'ngfw-shared', 'layer3': {}, 'slot': 1,
         'default_value': 'ethernet1/3'},
