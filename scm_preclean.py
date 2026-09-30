@@ -104,7 +104,7 @@ KEPT = {
 # Internet Security > General > General Settings (Inbound/Outbound Zone). Not in
 # the public API; the SCM UI's own backend serves it and accepts a service
 # account token in `x-auth-jwt`. Its host is per tenant and region (seen in the
-# browser's developer tools, e.g. https://paas-3.prod.fr.panorama.paloaltonetworks.com).
+# browser's developer tools, e.g. https://paas-N.prod.<region>.panorama.paloaltonetworks.com).
 SWG_ZONE = '/api/sase/config/v1/policies/swg-zone'
 SWG_HINT = ('referenced by swg/general-settings/outbound-zone: pass --ui-api, or in the UI set '
             'Internet Security > General > General Settings > Outbound Zone to `any` '

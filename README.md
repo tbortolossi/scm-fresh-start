@@ -122,7 +122,7 @@ plan only: rerun with --apply
 | `--global` | Also clean Global |
 | `--env-prefix SCM_TEST` | Read `SCM_TEST_TSG_ID`, `SCM_TEST_CLIENT_ID` and `SCM_TEST_CLIENT_SECRET`, to reach a second tenant from the same `.env` |
 | `--env-file PATH` | Read credentials from this `KEY=value` file (default `.env`). Environment variables take precedence |
-| `--ui-api URL` | The SCM UI backend of the tenant (per tenant and region; find it in the browser developer tools, e.g. `https://paas-3.prod.fr.panorama.paloaltonetworks.com`). Default: `<PREFIX>_UI_API`. It is not a documented API and may change |
+| `--ui-api URL` | The SCM UI backend of the tenant (per tenant and region; find it in the browser developer tools, e.g. `https://paas-N.prod.<region>.panorama.paloaltonetworks.com`). Default: `<PREFIX>_UI_API`. It is not a documented API and may change |
 | `--backup-dir DIR` | Where the JSON backup goes (default: the current directory) |
 
 The exit code is 0 when nothing is left to remove other than what SCM keeps, and 1 otherwise.
