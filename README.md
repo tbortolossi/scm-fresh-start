@@ -49,7 +49,7 @@ references, so this is SCM's own limit, not an API or role limit. Without `--dee
 
 | Item | Why |
 |---|---|
-| zone `internet` (All Firewalls) | The NGFW web proxy setting `swg -> general-settings -> outbound-zone` references it. The script empties the zone of interfaces. Clear that setting in the UI and the next run deletes the zone |
+| zone `internet` (All Firewalls) | The Internet Security setting `swg -> general-settings -> outbound-zone` references it, and the API does not expose that setting. The script empties the zone of interfaces and prints the fix: in the UI, **Internet Security → General → General Settings** (scope All Firewalls), set **Outbound Zone** to `any` and save. The next run then deletes the zone |
 | tags `Sanctioned`, `Tolerated` (Global) | The predefined snippet `Gen-AI-Best-Practice` references them |
 | snippets `default` / *Global-Default* and `Web-Security-Default` / *Internet-Security-Default* on Global | Predefined snippets attached nowhere reference their content, and predefined snippets cannot be deleted. *Global-Default*: its `best-practice` zone protection profile is used by the zones of the AWS/Azure/GCP/AIRS VM templates. *Internet-Security-Default*: its `web-security-default` profiles are used by `DNS-Best-Practice-pg`, its application filters by the VM templates' rules and by `Global Web Access-Allow/Block` (`Internet-Access-Best-Practice`), and its `Web Security Global` tag by those same two rules |
 | the tenant's certificates (Root CA, Forward-Trust/UnTrust CAs, cookie CAs, SAML) | "Deleting default certificates is not allowed". The script does not attempt it |
@@ -115,9 +115,11 @@ The service account needs a role that can read and write the configuration of *A
 ## Suggested order for a Panorama migration
 
 1. Take a snapshot of the fresh tenant in SCM, so you can return to it.
-2. Run `scm_preclean.py`, read the plan, then run it with `--apply` (and `--global` if you want).
-3. Run the Panorama import.
-4. In the load results, look for `already in use … Discarding` lines. After this clean there should be none
+2. In the UI, set **Internet Security → General → General Settings → Outbound Zone** to `any` (scope All
+   Firewalls). This is the only step the API cannot do.
+3. Run `scm_preclean.py`, read the plan, then run it with `--apply` (`--global`, or `--deep` for a bare Global).
+4. Run the Panorama import.
+5. In the load results, look for `already in use … Discarding` lines. After this clean there should be none
    for `ethernet1/3` or `ethernet1/4`.
 
 ## Tests

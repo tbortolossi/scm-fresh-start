@@ -92,6 +92,11 @@ KEPT = {
 }
 
 
+# The one blocker no API role reaches: set it by hand, then rerun.
+SWG_HINT = ('referenced by swg/general-settings/outbound-zone: in the UI, Internet Security > General > '
+            'General Settings (scope All Firewalls), set Outbound Zone to `any`, save, rerun')
+
+
 # ------------------------------------------------------------------ settings
 def load_env(path='.env'):
     """os.environ, overlaid on KEY=value lines of a .env file if there is one."""
@@ -422,6 +427,8 @@ def apply(c, todo):
         if what:
             neutral.add((folder, kind(ep), x['name']))
             print(f'  kept  {describe(t)}: {what}')
+            if 'outbound-zone' in err:
+                print(f'        {SWG_HINT}')
         else:
             still.append(f'{describe(t)}: {err[:300]}')
             print(f'  FAIL  {describe(t)}: {err[:300]}')
