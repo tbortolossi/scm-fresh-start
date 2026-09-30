@@ -179,13 +179,17 @@ python scm_preclean.py --apply --global   # All Firewalls and Global
 The script prints where the JSON backup is, each change, and a summary: how many items were removed,
 how many were kept, and anything still left.
 
+**Then refresh the SCM page in your browser** (F5). The web UI does not show changes made through the API
+until you reload it: without a refresh you still see the old interfaces, zones and snippets, and a change
+you save from that stale page can put them back.
+
 If the output says `referenced by swg/general-settings/outbound-zone` for the zone `internet`, do this in
 the UI, then run the script again: **Internet Security → General → General Settings**, scope *All Firewalls*,
 **Outbound Zone** = `any`.
 
 ### 4. Check before the first push
 
-For each firewall, compare its interface list in SCM with Panorama: `ethernet1/3` and `ethernet1/4` must
+Refresh the SCM page first if you have not done it since the run. Then, for each firewall, compare its interface list in SCM with Panorama: `ethernet1/3` and `ethernet1/4` must
 be back, with their addresses and zones. This was verified on a lab import: after the script, the firewalls
 had both interfaces back, with their addresses, zones, virtual routers and IKE gateway references.
 
@@ -195,8 +199,9 @@ had both interfaces back, with their addresses, zones, virtual routers and IKE g
 2. Run the Panorama import. In the load results, note the `already in use … Discarding` lines.
 3. Run `scm_preclean.py`, read the plan, then run it with `--apply` (and `--global`, or `--deep` for a bare
    Global).
-4. Check each firewall's interface list against Panorama.
-5. Push.
+4. Refresh the SCM page in your browser.
+5. Check each firewall's interface list against Panorama.
+6. Push.
 
 ## Options
 
