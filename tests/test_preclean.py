@@ -109,3 +109,12 @@ def test_unref_group_zone_and_filter():
     af = {'id': 'a', 'name': 'Tolerated Gen AI Apps', 'tagging': {'tag': ['[Web App]', 'Tolerated']}}
     assert P.untag_filter(af, {'Tolerated'})['tagging'] == {'tag': ['[Web App]']}
     assert 'tagging' not in P.untag_filter({'id': 'b', 'name': 'b', 'tagging': {'tag': ['Tolerated']}}, {'Tolerated'})
+
+
+def test_swg_zone_step_planned_first_when_not_any():
+    fake = FakeScm(TENANT)
+    fake.ui_api = 'https://ui.example'
+    fake.ui = lambda method, path, **kw: {'inbound_zone': 'any', 'outbound_zone': 'internet'}
+    todo, _ = P.plan(fake, ['ngfw-shared'])
+    assert todo[0][0] == 'swg'
+    assert 'outbound internet -> any' in P.describe(todo[0])

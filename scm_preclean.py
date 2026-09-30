@@ -97,9 +97,14 @@ KEPT = {
 }
 
 
-# The one blocker no API role reaches: set it by hand, then rerun.
-SWG_HINT = ('referenced by swg/general-settings/outbound-zone: in the UI, Internet Security > General > '
-            'General Settings (scope All Firewalls), set Outbound Zone to `any`, save, rerun')
+# Internet Security > General > General Settings (Inbound/Outbound Zone). Not in
+# the public API; the SCM UI's own backend serves it and accepts a service
+# account token in `x-auth-jwt`. Its host is per tenant and region (seen in the
+# browser's developer tools, e.g. https://paas-3.prod.fr.panorama.paloaltonetworks.com).
+SWG_ZONE = '/api/sase/config/v1/policies/swg-zone'
+SWG_HINT = ('referenced by swg/general-settings/outbound-zone: pass --ui-api, or in the UI set '
+            'Internet Security > General > General Settings > Outbound Zone to `any` '
+            '(scope All Firewalls), then rerun')
 
 
 # ------------------------------------------------------------------ settings
@@ -127,6 +132,8 @@ def credentials(env, prefix='SCM'):
 
 # ------------------------------------------------------------------ SCM API
 class Scm:
+    ui_api = None
+
     def __init__(self, tsg, client_id, secret):
         r = requests.post(AUTH, data={'grant_type': 'client_credentials', 'scope': f'tsg_id:{tsg}'},
                           auth=(client_id, secret), timeout=60)
@@ -154,6 +161,14 @@ class Scm:
             if len(data) < 200 or (total is not None and len(out) >= total):
                 return out
             offset += 200
+
+    def ui(self, method, path, **kw):
+        """A call to the UI backend (--ui-api), which reads the token from x-auth-jwt."""
+        h = {'x-auth-jwt': self.h['Authorization'].split()[1], 'content-type': 'application/json'}
+        r = requests.request(method, self.ui_api + path, headers=h, timeout=120, **kw)
+        if r.status_code >= 400 or r.text.lstrip().startswith('<'):
+            raise RuntimeError(f'{r.status_code} UI backend: {r.text[:200]}')
+        return r.json() if r.text.strip() else {}
 
     def call(self, method, path, **kw):
         r = requests.request(method, API + path, headers=self.h, timeout=120, **kw)
@@ -211,6 +226,10 @@ def plan(c, folders, deep=False):
                 kept.append((f'[{FOLDERS[folder]}] snippet `{s}` attached', why))
             else:
                 todo.append(('detach', folder, None, {'name': s, 'folder': fobj[folder]}))
+    if getattr(c, 'ui_api', None) and 'ngfw-shared' in folders:
+        cur = c.ui('GET', SWG_ZONE, params={'folder': 'ngfw-shared', 'pagination': 'false'})
+        if cur and (cur.get('inbound_zone'), cur.get('outbound_zone')) != ('any', 'any'):
+            todo.insert(0, ('swg', 'ngfw-shared', None, {'name': 'swg-zone', 'before': cur}))
     if deep:
         detached = [t[3]['name'] for t in todo if t[0] == 'detach']
         tags = {t[3]['name'] for t in todo if t[0] == 'delete' and kind(t[2]) == 'tags'}
@@ -344,6 +363,10 @@ def describe(t):
     action, folder, ep, x = t
     if action == 'modify':
         return f'[{folder}] edit {kind(ep)} `{x["item"].get("name")}`: {x["note"]}'
+    if action == 'swg':
+        b = x['before']
+        return (f'[All Firewalls] Internet Security zones: inbound {b.get("inbound_zone")} -> any, '
+                f'outbound {b.get("outbound_zone")} -> any')
     return (f'[{FOLDERS[folder]}] detach snippet `{x["name"]}`' if action == 'detach'
             else f'[{FOLDERS[folder]}] delete {kind(ep)} `{x.get("name")}`')
 
@@ -416,6 +439,9 @@ def apply(c, todo):
         try:
             if action == 'modify':
                 modify(c, ep, x)
+            elif action == 'swg':
+                c.ui('PUT', SWG_ZONE, params={'folder': 'ngfw-shared'},
+                     json={'inbound_zone': 'any', 'outbound_zone': 'any'})
             elif action == 'delete':
                 c.call('DELETE', f'/config/{ep}/{x["id"]}')
             else:
@@ -471,15 +497,19 @@ def main(argv=None):
     ap.add_argument('--env-file', default='.env', help='KEY=value file read under the environment')
     ap.add_argument('--env-prefix', default='SCM',
                     help='read <PREFIX>_TSG_ID / _CLIENT_ID / _CLIENT_SECRET (default SCM)')
+    ap.add_argument('--ui-api', help='SCM UI backend URL, to set the Internet Security inbound/outbound '
+                                     'zones of All Firewalls to any (default <PREFIX>_UI_API)')
     ap.add_argument('--backup-dir', default='.', help='where the JSON backup is written')
     ap.add_argument('--version', action='version', version=__version__)
     a = ap.parse_args(argv)
 
-    tsg, cid, secret = credentials(load_env(a.env_file), a.env_prefix)
+    env = load_env(a.env_file)
+    tsg, cid, secret = credentials(env, a.env_prefix)
     a.glob = a.glob or a.deep
     folders = ['ngfw-shared'] + (['All'] if a.glob else [])
     print(f'tenant TSG ...{tsg[-4:]}')
     c = Scm(tsg, cid, secret)
+    c.ui_api = (a.ui_api or env.get(f'{a.env_prefix}_UI_API') or '').rstrip('/') or None
     todo, kept = plan(c, folders, a.deep)
     print(f'{len(todo)} change(s) in {", ".join(FOLDERS[f] for f in folders)}:')
     for t in todo:

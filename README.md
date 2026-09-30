@@ -49,7 +49,7 @@ references, so this is SCM's own limit, not an API or role limit. Without `--dee
 
 | Item | Why |
 |---|---|
-| zone `internet` (All Firewalls) | The Internet Security setting `swg -> general-settings -> outbound-zone` references it, and the API does not expose that setting. The script empties the zone of interfaces and prints the fix: in the UI, **Internet Security → General → General Settings** (scope All Firewalls), set **Outbound Zone** to `any` and save. The next run then deletes the zone |
+| zone `internet` (All Firewalls) | The Internet Security setting `swg -> general-settings -> outbound-zone` references it, and the public API does not expose that setting. With `--ui-api`, the script sets the Inbound and Outbound Zones of All Firewalls to `any` first, through the SCM UI's own backend, and the zone deletes. Without it, the script empties the zone and prints the manual fix: **Internet Security → General → General Settings** (scope All Firewalls), **Outbound Zone** = `any` |
 | tags `Sanctioned`, `Tolerated` (Global) | The predefined snippet `Gen-AI-Best-Practice` references them |
 | snippets `default` / *Global-Default* and `Web-Security-Default` / *Internet-Security-Default* on Global | Predefined snippets attached nowhere reference their content, and predefined snippets cannot be deleted. *Global-Default*: its `best-practice` zone protection profile is used by the zones of the AWS/Azure/GCP/AIRS VM templates. *Internet-Security-Default*: its `web-security-default` profiles are used by `DNS-Best-Practice-pg`, its application filters by the VM templates' rules and by `Global Web Access-Allow/Block` (`Internet-Access-Best-Practice`), and its `Web Security Global` tag by those same two rules |
 | the tenant's certificates (Root CA, Forward-Trust/UnTrust CAs, cookie CAs, SAML) | "Deleting default certificates is not allowed". The script does not attempt it |
@@ -107,6 +107,7 @@ plan only: rerun with --apply
 | `--global` | Also clean Global |
 | `--env-prefix SCM_TEST` | Read `SCM_TEST_TSG_ID`, `SCM_TEST_CLIENT_ID` and `SCM_TEST_CLIENT_SECRET`, to reach a second tenant from the same `.env` |
 | `--env-file PATH` | Read credentials from this `KEY=value` file (default `.env`). Environment variables take precedence |
+| `--ui-api URL` | The SCM UI backend of the tenant (per tenant and region; find it in the browser developer tools, e.g. `https://paas-3.prod.fr.panorama.paloaltonetworks.com`). Default: `<PREFIX>_UI_API`. It is not a documented API and may change |
 | `--backup-dir DIR` | Where the JSON backup goes (default: the current directory) |
 
 The exit code is 0 when nothing is left to remove other than what SCM keeps, and 1 otherwise.
