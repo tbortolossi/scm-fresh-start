@@ -53,7 +53,7 @@ references, so this is SCM's own limit, not an API or role limit. Without `--dee
 | tags `Sanctioned`, `Tolerated` (Global) | The predefined snippet `Gen-AI-Best-Practice` references them |
 | snippets `default` / *Global-Default* and `Web-Security-Default` / *Internet-Security-Default* on Global | Predefined snippets attached nowhere reference their content, and predefined snippets cannot be deleted. *Global-Default*: its `best-practice` zone protection profile is used by the zones of the AWS/Azure/GCP/AIRS VM templates. *Internet-Security-Default*: its `web-security-default` profiles are used by `DNS-Best-Practice-pg`, its application filters by the VM templates' rules and by `Global Web Access-Allow/Block` (`Internet-Access-Best-Practice`), and its `Web Security Global` tag by those same two rules |
 | the tenant's certificates (Root CA, Forward-Trust/UnTrust CAs, cookie CAs, SAML) | "Deleting default certificates is not allowed". The script does not attempt it |
-| snippet `GlobalProtect-Default` on Global, when attached | It holds the `Local Users` authentication profile of GlobalProtect / Mobile Users, and SCM refuses the detach with a bare 500, even with `--deep`. Kept: it is not NGFW configuration |
+| snippet `GlobalProtect-Default` on Global, when attached | Its `Local Users` authentication profile is used by the Mobile Users authentication setting `DEFAULT` (portal and gateway client auth). SCM refuses the detach with a bare 500 until that setting is gone |
 | device settings (DNS, NTP, service routes, admin roles…) | Not exposed to a standard service account |
 
 The blockers on Global are **predefined snippets attached nowhere**. They cannot be deleted, but their
@@ -66,6 +66,7 @@ before any delete or detach:
 | VM template rules use `All Web Applications` | the application becomes `any` |
 | `DNS-Best-Practice-pg` uses the `web-security-default` profiles | it uses the predefined `best-practice` profiles |
 | `Global Web Access-Allow` / `-Block` (Internet-Access-Best-Practice) use the `Web Security Global` tag and web application filters | those fields are removed |
+| Mobile Users authentication setting `DEFAULT` uses GlobalProtect-Default's `Local Users` profile | the setting is deleted. **Mobile Users then has no client authentication**: add one before you deploy Mobile Users on this tenant |
 | Gen-AI-Best-Practice filters are tagged `Sanctioned` / `Tolerated` | the tag is removed. When the Internet rule `Sanctioned Gen AI Access` pins the filter ("… is not a valid reference"), that rule is deleted first |
 
 This changes Palo Alto's predefined templates in your tenant: the VM and best-practice snippets no longer

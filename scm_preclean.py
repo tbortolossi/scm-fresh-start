@@ -89,10 +89,11 @@ KEPT = {
                                    'best-practice zone protection',
     ('All', 'snippet', 'Web-Security-Default'): 'the predefined VM, DNS-Best-Practice and '
                                                 'Internet-Access-Best-Practice snippets reference it',
-    # Holds the `Local Users` authentication profile for GlobalProtect / Mobile Users;
-    # detaching it fails with a bare 500 even under --deep. Not NGFW config.
-    ('All', 'snippet', 'GlobalProtect-Default'): 'GlobalProtect / Mobile Users use its authentication '
-                                                 'profile (SCM answers a bare 500); not NGFW config',
+    # Holds the `Local Users` authentication profile, used by the Mobile Users
+    # authentication setting DEFAULT (portal and gateway client auth). The detach
+    # fails with a bare 500 until that setting is gone; --deep deletes it.
+    ('All', 'snippet', 'GlobalProtect-Default'): 'the Mobile Users authentication setting DEFAULT uses '
+                                                 'its Local Users profile (use --deep)',
 }
 
 
@@ -184,7 +185,7 @@ def is_own(ep, folder, item):
 
 def plan(c, folders, deep=False):
     """(action, folder, endpoint, item) still to do, and (description, reason) kept."""
-    kept_rules = {k: v for k, v in KEPT.items() if k[2] == 'GlobalProtect-Default'} if deep else KEPT
+    kept_rules = {} if deep else KEPT
     snippets = {s['name']: s.get('type') for s in c.list('/config/setup/v1/snippets')}
     fobj = {f['name']: f for f in c.list('/config/setup/v1/folders')}
     todo, kept = [], []
@@ -290,12 +291,14 @@ def plan_unref(c, snippet_types, folders, detached, tags):
     rules use Internet-Security-Default's application filters; DNS-Best-Practice-pg
     uses its profiles; Internet-Access-Best-Practice's rules its filters and tag;
     Gen-AI-Best-Practice's filters the Sanctioned/Tolerated tags."""
-    names, zpp = set(), set()
+    names, zpp, auth = set(), set(), set()
     for sn in detached:
         for ep in REFERENCED:
             names |= {x['name'] for x in c.list('/config/' + ep, snippet=sn) if x.get('snippet') == sn}
         zpp |= {x['name'] for x in c.list('/config/network/v1/zone-protection-profiles', snippet=sn)
                 if x.get('snippet') == sn}
+        auth |= {x['name'] for x in c.list('/config/identity/v1/authentication-profiles', snippet=sn)
+                 if x.get('snippet') == sn}
     names |= tags
     scopes = [('snippet', n) for n, t in snippet_types.items()
               if (t in ('predefined', 'readonly') or n == 'predefined-snippet') and n not in detached]
@@ -325,6 +328,15 @@ def plan_unref(c, snippet_types, folders, detached, tags):
             for af in filter(own, c.list('/config/objects/v1/application-filters', **q)):
                 add(scope, 'objects/v1/application-filters', af, untag_filter(af, tags),
                     'drop tag ' + ', '.join(sorted(tags)))
+    # Mobile Users (Prisma Access) authentication settings that use a detached
+    # snippet's authentication profile: deleted. Without one, the Mobile Users
+    # portal and gateway have no client authentication until you add one.
+    if auth:
+        for a in c.list('/config/mobile-agent/v1/authentication-settings', folder='Mobile Users'):
+            if a.get('authentication_profile') in auth:
+                out.append(('modify', 'Mobile Users', 'mobile-agent/v1/authentication-settings',
+                            {'item': a, 'body': None,
+                             'note': f'delete (uses {a["authentication_profile"]})'}))
     return out
 
 
@@ -378,6 +390,9 @@ def fallback(c, ep, x):
 
 def modify(c, ep, x):
     item, body = x['item'], x['body']
+    if body is None:                  # a Mobile Users setting: no id, addressed by name
+        c.call('DELETE', f'/config/{ep}', params={'folder': item['folder'], 'name': item['name']})
+        return
     params = {'position': 'pre'} if 'rules' in ep else {}
     try:
         c.call('PUT', f'/config/{ep}/{item["id"]}', params=params, json=body)
