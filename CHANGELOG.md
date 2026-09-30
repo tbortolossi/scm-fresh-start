@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- README rewritten for colleagues new to the tool: the goal (a tenant with no configuration of its own, like
+  a freshly installed Panorama), what the tenant ships with and what the script removes, a step-by-step
+  guide with the service account and `.env` setup, and how to find the `--ui-api` host.
+
 ## 0.3.0
 
 - Run after the import, not before: the import reloads the tenant defaults. The README says so.
