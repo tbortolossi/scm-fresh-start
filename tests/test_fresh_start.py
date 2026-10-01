@@ -144,3 +144,8 @@ def test_ports_planned_only_for_own_snippets_without_default():
 
     got = [P.describe(t) for t in P.plan_ports(Fake(data), {'TPL-SITE': None, 'my-snippet': None})]
     assert got == ['[TPL-SITE] set $ethernet1-3 default port -> ethernet1/3']
+
+
+def test_version_matches_pyproject():
+    pyproject = (Path(__file__).resolve().parent.parent / 'pyproject.toml').read_text()
+    assert f'version = "{P.__version__}"' in pyproject
