@@ -1,12 +1,14 @@
 # Changelog
 
-## Unreleased
+## 0.4.0
 
 - Renamed `scm-preclean` to `scm-fresh-start`: the script is `scm_fresh_start.py` and backups are
   `scm-fresh-start-*.json`. It runs after the import, so "preclean" was misleading.
 - README rewritten for colleagues new to the tool: the goal (a tenant with no configuration of its own, like
   a freshly installed Panorama), what the tenant ships with and what the script removes, a step-by-step
   guide with the service account and `.env` setup, and how to find the `--ui-api` host.
+- CI: weekly dependency audit (pip-audit) and a gitleaks secret scan. `pyproject.toml` declares the
+  project metadata and Python 3.9+.
 
 ## 0.3.0
 

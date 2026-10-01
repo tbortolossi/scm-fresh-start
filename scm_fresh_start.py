@@ -45,7 +45,7 @@ from pathlib import Path
 
 import requests
 
-__version__ = '0.3.0'
+__version__ = '0.4.0'
 
 API = 'https://api.strata.paloaltonetworks.com'
 AUTH = 'https://auth.apps.paloaltonetworks.com/oauth2/access_token'
