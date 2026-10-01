@@ -1,0 +1,22 @@
+# Dependency vulnerability scan. Runs weekly as well as on changes: advisories
+# appear while the repository sits still.
+name: Dependency Audit
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "0 6 * * 1"  # Monday 06:00 UTC
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # Audits what CI installs from requirements.txt; fails on any known advisory.
+      - run: pipx run pip-audit --requirement requirements.txt --strict
