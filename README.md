@@ -61,7 +61,7 @@ Only the tenant's default configuration, in *All Firewalls* and (with `--global`
 | Interfaces and variables | `$eth-internet`, `$eth-local` and every other interface or variable the folder owns |
 | Zones | `internet`, `local` and any other zone the folder owns. A zone that something still references is kept, but emptied of its interfaces |
 | Routers | the logical router and the virtual router `default` |
-| Snippets | the predefined snippets attached to the folder (`Auto-VPN-Default-Snippet` on All Firewalls, the default snippets on Global) are **detached**. SCM does not let anyone delete them |
+| Snippets | the predefined snippets attached to the folder (`Auto-VPN-Default-Snippet` on All Firewalls, the default snippets on Global except *Global-Default*) are **detached**. SCM does not let anyone delete them |
 | Rules, profiles, objects | security and NAT rules, security profiles and profile groups, addresses, services, tags… owned by the folder |
 | Internet Security zones | *Outbound Zone* set to `any` (with `--ui-api`; otherwise the script tells you to do it in the UI) |
 
@@ -237,17 +237,25 @@ references, so this is SCM's own limit, not an API or role limit. Without `--dee
 |---|---|
 | zone `internet` (All Firewalls) | The Internet Security setting `swg -> general-settings -> outbound-zone` references it, and the public API does not expose that setting. With `--ui-api`, the script sets the Inbound and Outbound Zones of All Firewalls to `any` first, and the zone deletes. Without it, the script empties the zone and prints the manual fix |
 | tags `Sanctioned`, `Tolerated` (Global) | The predefined snippet `Gen-AI-Best-Practice` references them |
-| snippets `default` / *Global-Default* and `Web-Security-Default` / *Internet-Security-Default* on Global | Predefined snippets attached nowhere reference their content, and predefined snippets cannot be deleted. *Global-Default*: its `best-practice` zone protection profile is used by the zones of the AWS/Azure/GCP/AIRS VM templates. *Internet-Security-Default*: its `web-security-default` profiles are used by `DNS-Best-Practice-pg`, its application filters by the VM templates' rules and by `Global Web Access-Allow/Block` (`Internet-Access-Best-Practice`), and its `Web Security Global` tag by those same two rules |
+| snippet `Web-Security-Default` / *Internet-Security-Default* on Global | Predefined snippets attached nowhere reference its content, and predefined snippets cannot be deleted: its `web-security-default` profiles are used by `DNS-Best-Practice-pg`, its application filters by the VM templates' rules and by `Global Web Access-Allow/Block` (`Internet-Access-Best-Practice`), and its `Web Security Global` tag by those same two rules |
 | the tenant's certificates (Root CA, Forward-Trust/UnTrust CAs, cookie CAs, SAML) | "Deleting default certificates is not allowed". The script does not attempt it |
 | snippet `GlobalProtect-Default` on Global, when attached | Its `Local Users` authentication profile is used by the Mobile Users authentication setting `DEFAULT` (portal and gateway client auth). SCM refuses the detach with a bare 500 until that setting is gone |
 | device settings (DNS, NTP, service routes, admin roles…) | Not exposed to a standard service account |
+
+One snippet stays attached even with `--deep`: **`default` / *Global-Default*** on Global. It holds the
+`Cortex Data Lake` log forwarding profile that the default security rules (`intrazone-default`) use, and the
+public API does not expose those rules. Detached, every push fails with `rulebase -> default-security-rules
+-> rules -> intrazone-default -> log-setting 'Cortex Data Lake' is not a valid reference`. It must stay
+attached to Global. Its content does not get in the way of an import: IKE and IPsec
+crypto profiles, the `best-practice` zone protection profile and tag, the sinkhole address, a QoS profile,
+`redist-collector-profile`, `EDL-Hosting-Service-Profile` and one HIP object. No zone, interface, rule or
+variable.
 
 The blockers on Global are **predefined snippets attached nowhere**. They cannot be deleted, but their
 objects can be edited. `--deep` makes the smallest edits that release Global, before any delete or detach:
 
 | Blocker | Edit |
 |---|---|
-| zones of the VM templates, and All Firewalls' `internet` zone, use Global-Default's `best-practice` zone protection | the zone protection profile is removed from those zones. The `internet` zone's reference is the one SCM hides behind a bare `500 config connection returned error` |
 | VM template rules use `All Web Applications` | the application becomes `any` |
 | `DNS-Best-Practice-pg` uses the `web-security-default` profiles | it uses the predefined `best-practice` profiles |
 | `Global Web Access-Allow` / `-Block` (Internet-Access-Best-Practice) use the `Web Security Global` tag and web application filters | those fields are removed |
