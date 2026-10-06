@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.1
+
+- Global-Default (snippet `default`) is never detached, not even with `--deep`. It holds the `Cortex Data
+  Lake` log forwarding profile used by the default security rules (`intrazone-default`), which the public
+  API does not expose. Once it was detached, every push failed with `intrazone-default -> log-setting
+  'Cortex Data Lake' is not a valid reference`. It must stay attached to Global.
+  The plan now reports it as `kept`.
+
 ## 0.4.0
 
 - Renamed `scm-preclean` to `scm-fresh-start`: the script is `scm_fresh_start.py` and backups are

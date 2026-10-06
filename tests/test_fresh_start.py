@@ -67,6 +67,20 @@ def test_plan_owns_only_folder_items_and_detaches_only_predefined():
     assert kept == []
 
 
+
+def test_global_default_never_detached_even_deep():
+    data = dict(TENANT)
+    data['/config/setup/v1/snippets'] = TENANT['/config/setup/v1/snippets'] + [
+        {'name': 'default', 'type': 'predefined'}, {'name': 'hip-default', 'type': 'predefined'}]
+    data['/config/setup/v1/folders'] = TENANT['/config/setup/v1/folders'] + [
+        {'id': 'f0', 'name': 'All', 'snippets': ['default', 'hip-default']}]
+    for deep in (False, True):
+        todo, kept = P.plan(FakeScm(data), ['ngfw-shared', 'All'], deep)
+        got = [P.describe(t) for t in todo]
+        assert '[Global] detach snippet `hip-default`' in got
+        assert not any('`default`' in d and 'detach' in d for d in got)
+        assert any(d == '[Global] snippet `default` attached' and 'must stay attached' in why for d, why in kept)
+
 def test_referenced_zone_and_interface_are_neutralised():
     fake = FakeScm(TENANT, refuse={'z1', 'e1'})
     todo = [t for t in P.plan(fake, ['ngfw-shared'])[0] if t[3].get('id') in ('z1', 'e1')]

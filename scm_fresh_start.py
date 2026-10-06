@@ -25,7 +25,8 @@ What it does, in the chosen folders only, each step before what it references:
    logical and virtual routers, zones, interfaces, profiles, objects, variables;
 2. a zone that stays referenced is kept, with its interfaces removed;
 3. an interface that still cannot be deleted has its default port cleared;
-4. detach every predefined/readonly snippet, one at a time.
+4. detach every predefined/readonly snippet, one at a time, except Global-Default
+   (see PINNED): the push needs it.
 
 Without --deep, what SCM refuses to remove is reported as "kept", with the reason
 (see KEPT). The blockers are predefined snippets attached nowhere (VM templates,
@@ -45,7 +46,7 @@ from pathlib import Path
 
 import requests
 
-__version__ = '0.4.0'
+__version__ = '0.4.1'
 
 API = 'https://api.strata.paloaltonetworks.com'
 AUTH = 'https://auth.apps.paloaltonetworks.com/oauth2/access_token'
@@ -87,10 +88,8 @@ MARKER = {'id', 'name', 'folder', 'snippet', 'policy_type'}
 KEPT = {
     ('All', 'tags', 'Sanctioned'): 'referenced by the predefined snippet Gen-AI-Best-Practice',
     ('All', 'tags', 'Tolerated'): 'referenced by the predefined snippet Gen-AI-Best-Practice',
-    # UI names Global-Default / Internet-Security-Default. Their referrers are
-    # predefined snippets attached nowhere, which cannot be deleted either.
-    ('All', 'snippet', 'default'): 'the predefined VM snippets (AWS/Azure/GCP) reference its '
-                                   'best-practice zone protection',
+    # UI name Internet-Security-Default. Its referrers are predefined snippets
+    # attached nowhere, which cannot be deleted either.
     ('All', 'snippet', 'Web-Security-Default'): 'the predefined VM, DNS-Best-Practice and '
                                                 'Internet-Access-Best-Practice snippets reference it',
     # Holds the `Local Users` authentication profile, used by the Mobile Users
@@ -98,6 +97,15 @@ KEPT = {
     # fails with a bare 500 until that setting is gone; --deep deletes it.
     ('All', 'snippet', 'GlobalProtect-Default'): 'the Mobile Users authentication setting DEFAULT uses '
                                                  'its Local Users profile (use --deep)',
+}
+# Kept even with --deep. Global-Default (`default`) holds the `Cortex Data Lake`
+# log forwarding profile that the default security rules (intrazone-default)
+# use; the public API does not expose those rules. Detached, every push fails:
+# "intrazone-default -> log-setting 'Cortex Data Lake' is not a valid reference".
+# It must stay attached to Global.
+PINNED = {
+    ('All', 'snippet', 'default'): 'the default security rules use its `Cortex Data Lake` log forwarding '
+                                   'profile; it must stay attached or every push fails',
 }
 
 
@@ -204,7 +212,7 @@ def is_own(ep, folder, item):
 
 def plan(c, folders, deep=False):
     """(action, folder, endpoint, item) still to do, and (description, reason) kept."""
-    kept_rules = {} if deep else KEPT
+    kept_rules = PINNED if deep else {**KEPT, **PINNED}
     snippets = {s['name']: s.get('type') for s in c.list('/config/setup/v1/snippets')}
     fobj = {f['name']: f for f in c.list('/config/setup/v1/folders')}
     todo, kept = [], []
@@ -312,7 +320,8 @@ def plan_unref(c, snippet_types, folders, detached, tags):
     """Minimal edits that release what the Global clean needs released.
 
     Tested on a fresh tenant: the predefined VM templates' zones use Global-Default's
-    `best-practice` zone protection (so does All Firewalls' `internet` zone); their
+    `best-practice` zone protection (so does All Firewalls' `internet` zone), released
+    only if Global-Default is detached, which PINNED now prevents; their
     rules use Internet-Security-Default's application filters; DNS-Best-Practice-pg
     uses its profiles; Internet-Access-Best-Practice's rules its filters and tag;
     Gen-AI-Best-Practice's filters the Sanctioned/Tolerated tags."""
